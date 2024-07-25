@@ -39,7 +39,13 @@ def _find_watchable_paths(main_file: pathlib.Path) -> list[pathlib.Path]:
         if not _try_add(plugin.package):
             _try_add(plugin.package.replace(".", "-"))
 
-    paths: list[pathlib.Path] = [main_file.absolute()]
+    paths: list[pathlib.Path] = [self._main_file]
+    
+    # Add all files from the prompts/ directory recursively using absolute paths
+    prompts_dir = (self._main_file.parent / "prompts").absolute()
+    if prompts_dir.exists() and prompts_dir.is_dir():
+        paths.extend(file_path.absolute() for file_path in prompts_dir.rglob('*') if file_path.is_file())
+        
     for pkg in packages:
         # https://packaging.python.org/en/latest/specifications/direct-url/
         durl = pkg.read_text("direct_url.json")
@@ -83,12 +89,15 @@ class WatchServer:
         for pth in watch_paths:
             logger.log(DEV_LEVEL, f"Watching {pth}")
 
+        def custom_filter(change: watchfiles.Change, path: str) -> bool:
+            return path.endswith(('.py', '.md'))
+        
         read_ipc_task = self._loop.create_task(self._read_ipc_task())
         await watchfiles.arun_process(
             *watch_paths,
             target=self._worker_runner,
             args=(self._cli_args,),
-            watch_filter=watchfiles.filters.PythonFilter(),
+            watch_filter=custom_filter,
             callback=self._on_reload,
         )
 
